@@ -7,53 +7,91 @@ const getParseData = async () => {
     const page = await context.newPage()
     await page.goto('https://www.partyslate.com/find-vendors/event-planner/area/miami')
 
-    const getAgencieName = async () => { 
-        await page.waitForSelector('h1.chakra-heading css-u8kqmg')
-        const eventAgencieTitle = await page.$('h1.chakra-heading css-u8kqmg')
-
-        return eventAgencieTitle
+    const htmlClasses = {
+        companyName: 'h1.chakra-heading',
+        location: 'hgroup p.chakra-text.css-bqbbu',
+        contactPerson: 'h3.chakra-heading.css-1ham2m0',
+        minimumSpend: 'dd.css-1nmdp34',
+        jobTitle: 'p.chakra-text.css-26u3r1',
+        phoneNumber: 'a.chakra-link.css-1dvr8y4',
+        website: 'a.chakra-link.css-123qr35',
+        instagram: 'a.chakra-link.css-6cxgxb',
+        facebook: 'a.chakra-link.css-6cxgxb'
     }
 
-    const getAgencieLocation = async () => {
-        await page.waitForSelector('p.chakra-text css-bqbbu')
-        const agencieLocation = await page.$('p.chakra-text css-bqbbu')
-
-        return agencieLocation
+    const getSimpleParsedData = async (newPage, className) => {
+        const element = await newPage.$(className)
+        if (!element) return 'No data'
+        return await element.textContent()
     }
 
-    const getAgencieContacts = async () => {
-        const contactsButton = await page.$('button.chakra-button css-15tyt09')
+    const getHref = async (newPage, className) => {
+        const element = await newPage.$(className)
+        if (!element) return 'No data'
+        return await element.getAttribute('href')
+    }
+
+    const getAgencieContacts = async (newPage) => {
+        const contactsButton = await newPage.$('button.chakra-button.css-15tyt09')
         await contactsButton.click()
         
+        await newPage.waitForSelector('a')
+
         const contacts = {
-            phoneNumber: await page.$('a.chakra-link css-1dvr8y4'),
-            website: await page.$('a.chakra-link css-123qr35'),
+            phoneNumber: await getSimpleParsedData(newPage, htmlClasses.phoneNumber),
+            website: await getSimpleParsedData(newPage, htmlClasses.website),
+            instagram: await getHref(newPage, htmlClasses.instagram),
+            facebook: await getHref(newPage, htmlClasses.facebook),
         }
-        page.goBack()
 
         return contacts
     }
 
-    const cardsArcticlesCount = await page.$$eval('arcticle', elements => elements.length) //Количество карточек активных
-    
-    for(let i = 0; i < cardsArcticlesCount; i++){
-        //Получение обновленного списка карточек услуг
-        const cardsArcticles = await page.$$('article.src-components-CompanyDirectoryCard-styles__container__2JUdC src-pages-FindVendors-components-Results-styles__card__MdaJ_ src-components-CompanyDirectoryCard-styles__with-min-height__3NcZm')
-        await cardsArcticles[i].click() //Перешел на страницу ивента 
+    //Получение количества карточек мероприятий из списка
+    await page.waitForFunction(() => document.querySelectorAll('article').length > 20)
+    const cardsArticlesCount = await page.$$eval('article.src-components-CompanyDirectoryCard-styles__container__2JUdC', elements => elements.length) //Количество карточек активных
+
+    for(let i = 0; i < cardsArticlesCount; i++){
+        console.log('[INFO]', `Страница с карточкой ${i+1}`)
         
+        //Получение обновленного списка карточек услуг
+        await page.waitForSelector('article')
+        const cardsArticles = await page.$$('article.src-components-CompanyDirectoryCard-styles__container__2JUdC')
+
+        //Переход на страницу ивента 
+        const pagePromise = context.waitForEvent('page')
+        await cardsArticles[i].click()
+        const newPage = await pagePromise
+        
+        //Ожидание загрузки нужных элементов
+        await newPage.waitForSelector('h1.chakra-heading')
+        await newPage.waitForSelector('p.chakra-text')
+        await newPage.waitForSelector('button.chakra-button')
+        
+        //может не быть данных
+        const contactPersonElement = await newPage.$('h3.chakra-heading.css-1ham2m0')
+        if(contactPersonElement) await newPage.waitForSelector('h3.chakra-heading.css-1ham2m0')
+        
+        await newPage.waitForSelector('p.chakra-text.css-26u3r1')
+
+        //Объект данных из карточки агенства
         const agencieData = {
-            title: await getAgencieName(), //Название агенства
-            location: await getAgencieLocation(), //Местоположение
-            // contacts: await getAgencieContacts(), //Объект с номером и ссылкой на сайт
+            companyName: await getSimpleParsedData(newPage, htmlClasses.companyName),
+            location: await getSimpleParsedData(newPage, htmlClasses.location),
+            contacts: await getAgencieContacts(newPage, getSimpleParsedData),
+            contactPerson: await getSimpleParsedData(newPage, htmlClasses.contactPerson), 
+            minimumSpend: await getSimpleParsedData(newPage, htmlClasses.minimumSpend),
+            jobTitle: await getSimpleParsedData(newPage, htmlClasses.jobTitle),
         }
 
+        console.log(agencieData)
+
         agenciesList.push(agencieData)
-    
-        await page.goBack()    
+        
+        await newPage.close()
     }
     
     console.log(agenciesList)
-    // await getEventName(eventAgencies)
     
     await context.close()
     await browser.close()
