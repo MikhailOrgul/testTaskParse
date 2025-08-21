@@ -1,4 +1,5 @@
 const playWright = require('playwright')
+const { getEmail } = require('./emailParser')
 
 const getParseData = async () => {
     let agenciesList = []
@@ -30,7 +31,7 @@ const getParseData = async () => {
         return await element.getAttribute('href')
     }
 
-    const getAgencieContacts = async (newPage) => {
+    const getAgencieContacts = async (i, newPage) => {
         const contactsButton = await newPage.$('button.chakra-button.css-15tyt09')
         await contactsButton.click()
         
@@ -43,12 +44,16 @@ const getParseData = async () => {
             facebook: await getHref(newPage, htmlClasses.facebook),
         }
 
+        if (i<20) contacts.email = await getEmail(contacts.website)
+
         return contacts
     }
 
     let pageCount = 1
     while(agenciesList.length < 50){
-        await page.goto(`https://www.partyslate.com/find-vendors/event-planner/area/miami?page=${pageCount}`)
+        await page.goto(`https://www.partyslate.com/find-vendors/event-planner/area/miami?page=${pageCount}`, 
+            {timeout: 60000}
+        )
 
         await page.waitForFunction(() => document.querySelectorAll('article').length > 20)
         const cardsArticlesCount = await page.$$eval('article.src-components-CompanyDirectoryCard-styles__container__2JUdC', elements => elements.length) //Количество карточек активных
@@ -58,7 +63,7 @@ const getParseData = async () => {
             
             //Получение обновленного списка карточек услуг
             await page.waitForSelector('article')
-            await page.waitForLoadState('networkidle')
+            await page.waitForLoadState('networkidle', {timeout: 120000})
             const cardsArticles = await page.$$('article.src-components-CompanyDirectoryCard-styles__container__2JUdC')
 
             //Переход на страницу ивента 
@@ -81,7 +86,7 @@ const getParseData = async () => {
             const agencieData = {
                 companyName: await getSimpleParsedData(newPage, htmlClasses.companyName),
                 location: await getSimpleParsedData(newPage, htmlClasses.location),
-                contacts: await getAgencieContacts(newPage, getSimpleParsedData),
+                contacts: await getAgencieContacts(i, newPage),
                 contactPerson: await getSimpleParsedData(newPage, htmlClasses.contactPerson), 
                 minimumSpend: await getSimpleParsedData(newPage, htmlClasses.minimumSpend),
                 jobTitle: await getSimpleParsedData(newPage, htmlClasses.jobTitle),
@@ -111,7 +116,8 @@ const getParseData = async () => {
         facebook: item.contacts.facebook,
         contactPerson: item.contactPerson,
         minimumSpend: item.minimumSpend,
-        jobTitle: item.jobTitle
+        jobTitle: item.jobTitle,
+        email: Array.from(item.contacts.email).join(', ')
     }))
 
     return newAgenciesList
